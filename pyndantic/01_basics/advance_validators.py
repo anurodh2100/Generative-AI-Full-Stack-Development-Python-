@@ -38,3 +38,4 @@ class DateRange(BaseModel):
         if values.start_date >= values.end_date:
             raise ValueError('end_date must be after start_date')
         return values
+    
