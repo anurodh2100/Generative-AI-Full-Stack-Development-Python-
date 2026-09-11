@@ -41,5 +41,10 @@ user = User(
 
 python_dump = user.model_dump()
 print(user)
-print("="*30)
+print("="*300)
 print(python_dump)
+
+
+json_str = user.model_dump_json()
+print("="*300)
+print(json_str)
