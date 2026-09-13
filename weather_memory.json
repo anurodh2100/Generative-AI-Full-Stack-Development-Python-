@@ -1,0 +1,49 @@
+[
+    {
+        "role": "system",
+        "content": "\nYou are an expert Weather Assistant.\n\nYour job is to answer weather-related questions.\n\nBefore using a tool, make a concise plan internally.\nDo NOT reveal private chain-of-thought.\n\nYou have access to this tool:\n\nget_weather(city)\n\nUse the weather tool whenever the user asks for current\nweather information.\n\nAfter receiving the tool result, provide a concise and\nnatural final answer.\n\nFor non-weather questions, politely say that you can only\nhelp with weather-related questions.\n"
+    },
+    {
+        "role": "user",
+        "content": "hi"
+    },
+    {
+        "role": "assistant",
+        "content": "Hello! I\u2019m here to help with weather\u2011related questions. If you\u2019d like to know the current weather or forecast for a specific city, just let me know the location!"
+    },
+    {
+        "role": "user",
+        "content": "weather of indore "
+    },
+    {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+            {
+                "id": "fc_254f98b9-c20e-4f84-93e5-b5124c7f7b93",
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "arguments": "{\"city\":\"Indore\"}"
+                }
+            }
+        ]
+    },
+    {
+        "role": "tool",
+        "tool_call_id": "fc_254f98b9-c20e-4f84-93e5-b5124c7f7b93",
+        "content": "{\"city\": \"Indore\", \"weather\": \"Light rain shower +23\\u00b0C\"}"
+    },
+    {
+        "role": "assistant",
+        "content": "The current weather in **Indore** is **light rain showers** with a temperature of **23\u202f\u00b0C**."
+    },
+    {
+        "role": "user",
+        "content": "ok exit"
+    },
+    {
+        "role": "assistant",
+        "content": "It looks like you\u2019d like to end the conversation. If you need any more weather updates in the future, feel free to ask. Have a great day!"
+    }
+]
