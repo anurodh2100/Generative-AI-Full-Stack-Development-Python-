@@ -1,6 +1,6 @@
 # ---------------------------------------------------------
 # Weather Agent
-# Tool Calling + Planning + Memory + Rich
+# Tool Calling + Planning + In-Memory Conversation + Rich
 # ---------------------------------------------------------
 
 from groq import Groq
@@ -14,7 +14,7 @@ import time
 
 
 # ---------------------------------------------------------
-# Load environment variables
+# Load Environment Variables
 # ---------------------------------------------------------
 
 load_dotenv()
@@ -35,26 +35,32 @@ You are an expert Weather Assistant.
 
 Your job is to answer weather-related questions.
 
-Before using a tool, make a concise plan internally.
+Before using a tool, make a concise internal plan.
 Do NOT reveal private chain-of-thought.
 
-You have access to this tool:
+Available tools:
 
-get_weather(city)
+1. get_weather
+   Get current weather conditions of a city.
 
-Use the weather tool whenever the user asks for current
-weather information.
+2. get_forecast
+   Get the weather forecast for a city.
 
-After receiving the tool result, provide a concise and
-natural final answer.
+3. get_temperature
+   Get the current temperature of a city.
 
-For non-weather questions, politely say that you can only
-help with weather-related questions.
+Rules:
+- Use the appropriate tool whenever weather information
+  is required.
+- Do not make up weather information.
+- After receiving tool results, provide a concise answer.
+- For non-weather questions, politely say that you only
+  handle weather-related questions.
 """
 
 
 # ---------------------------------------------------------
-# Weather Tool
+# Weather Tool 1
 # ---------------------------------------------------------
 
 def get_weather(city: str):
@@ -70,52 +76,149 @@ def get_weather(city: str):
         }
 
     return {
-        "city": city,
-        "error": "Something went wrong while fetching weather."
+        "error": "Unable to fetch weather."
     }
 
 
 # ---------------------------------------------------------
-# Tool Schema
+# Weather Tool 2
 # ---------------------------------------------------------
 
-weather_tool = {
-    "type": "function",
-    "function": {
-        "name": "get_weather",
-        "description": "Get the current weather of a city.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "city": {
-                    "type": "string",
-                    "description": "Name of the city"
-                }
-            },
-            "required": ["city"]
+def get_forecast(city: str):
+
+    url = f"https://wttr.in/{city.lower()}?format=j1"
+
+    response = requests.get(url)
+
+    if response.status_code != 200:
+        return {
+            "error": "Unable to fetch forecast."
         }
+
+    data = response.json()
+
+    forecast = []
+
+    for day in data["weather"][:3]:
+
+        forecast.append({
+            "date": day["date"],
+            "max_temperature": day["maxtempC"],
+            "min_temperature": day["mintempC"],
+            "description": day["hourly"][4]["weatherDesc"][0]["value"]
+        })
+
+    return {
+        "city": city,
+        "forecast": forecast
     }
+
+
+# ---------------------------------------------------------
+# Weather Tool 3
+# ---------------------------------------------------------
+
+def get_temperature(city: str):
+
+    url = f"https://wttr.in/{city.lower()}?format=%t"
+
+    response = requests.get(url)
+
+    if response.status_code == 200:
+        return {
+            "city": city,
+            "temperature": response.text.strip()
+        }
+
+    return {
+        "error": "Unable to fetch temperature."
+    }
+
+
+# ---------------------------------------------------------
+# Available Tools
+# ---------------------------------------------------------
+
+available_tools = {
+    "get_weather": get_weather,
+    "get_forecast": get_forecast,
+    "get_temperature": get_temperature
 }
 
 
 # ---------------------------------------------------------
-# Memory
+# Tool Schemas
 # ---------------------------------------------------------
 
-MEMORY_FILE = "weather_memory.json"
+tools = [
 
-try:
-    with open(MEMORY_FILE, "r") as f:
-        messages = json.load(f)
-
-except FileNotFoundError:
-
-    messages = [
-        {
-            "role": "system",
-            "content": SYSTEM_PROMPT
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get the current weather conditions of a city.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                        "description": "Name of the city"
+                    }
+                },
+                "required": ["city"]
+            }
         }
-    ]
+    },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "get_forecast",
+            "description": "Get the weather forecast for a city.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                        "description": "Name of the city"
+                    }
+                },
+                "required": ["city"]
+            }
+        }
+    },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "get_temperature",
+            "description": "Get the current temperature of a city.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                        "description": "Name of the city"
+                    }
+                },
+                "required": ["city"]
+            }
+        }
+    }
+
+]
+
+
+# ---------------------------------------------------------
+# In-Memory Conversation
+# ---------------------------------------------------------
+
+messages = [
+    {
+        "role": "system",
+        "content": SYSTEM_PROMPT
+    }
+]
 
 
 # ---------------------------------------------------------
@@ -125,7 +228,7 @@ except FileNotFoundError:
 console.print(
     Panel(
         "[bold]Weather Agent[/bold]\n"
-        "Ask me about current weather.\n"
+        "Ask me about current weather or forecast.\n"
         "Type [yellow]exit[/yellow] to quit.",
         title="🌤️ Assistant"
     )
@@ -142,10 +245,15 @@ while True:
         "\n[bold cyan]👤 You:[/bold cyan] "
     )
 
+
+    # -----------------------------------------------------
+    # Exit
+    # -----------------------------------------------------
+
     if user_prompt.strip().lower() == "exit":
 
         console.print(
-            "[bold green]🤖 Assistant:[/bold green] "
+            "\n[bold green]🤖 Assistant:[/bold green] "
             "Goodbye! 👋"
         )
 
@@ -153,7 +261,7 @@ while True:
 
 
     # -----------------------------------------------------
-    # Add user message
+    # Add User Message
     # -----------------------------------------------------
 
     messages.append({
@@ -170,12 +278,18 @@ while True:
 
         start_time = time.perf_counter()
 
+
+        # -------------------------------------------------
+        # Groq Call
+        # -------------------------------------------------
+
         response = client.chat.completions.create(
             model="openai/gpt-oss-120b",
             messages=messages,
-            tools=[weather_tool],
+            tools=tools,
             tool_choice="auto"
         )
+
 
         response_time = time.perf_counter() - start_time
 
@@ -183,7 +297,7 @@ while True:
 
 
         # -------------------------------------------------
-        # Check Tool Call
+        # Tool Calling
         # -------------------------------------------------
 
         if assistant_message.tool_calls:
@@ -193,11 +307,14 @@ while True:
             )
 
             console.print(
-                "[bold magenta]🔧 Calling weather tool...[/bold magenta]"
+                "[bold magenta]🔧 Tool required![/bold magenta]"
             )
 
 
-            # Add assistant tool-call message
+            # -------------------------------------------------
+            # Add Assistant Tool Call
+            # -------------------------------------------------
+
             messages.append({
                 "role": "assistant",
                 "content": assistant_message.content,
@@ -228,31 +345,44 @@ while True:
                 )
 
 
-                if tool_name == "get_weather":
-
-                    city = arguments["city"]
-
-                    console.print(
-                        f"[bold cyan]📍 City:[/bold cyan] {city}"
-                    )
-
-                    tool_result = get_weather(city)
+                console.print(
+                    f"[bold cyan]🔧 Calling:[/bold cyan] "
+                    f"{tool_name}"
+                )
 
 
-                    console.print(
-                        "[bold green]🌤️ Weather data received![/bold green]"
-                    )
+                # ---------------------------------------------
+                # Get Function From Available Tools
+                # ---------------------------------------------
+
+                tool_function = available_tools.get(tool_name)
 
 
-                    # -----------------------------------------
-                    # Send Tool Result Back to Groq
-                    # -----------------------------------------
+                if tool_function:
 
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": json.dumps(tool_result)
-                    })
+                    tool_result = tool_function(**arguments)
+
+                else:
+
+                    tool_result = {
+                        "error": f"Tool '{tool_name}' not found."
+                    }
+
+
+                console.print(
+                    "[bold green]✅ Tool executed![/bold green]"
+                )
+
+
+                # ---------------------------------------------
+                # Send Tool Result Back To Groq
+                # ---------------------------------------------
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(tool_result)
+                })
 
 
             # ---------------------------------------------
@@ -273,6 +403,7 @@ while True:
             "content": final_answer
         })
 
+
         console.print(
             "\n[bold green]🤖 Assistant:[/bold green]"
         )
@@ -280,20 +411,9 @@ while True:
         console.print(final_answer)
 
         console.print(
-            f"\n[dim]Response Time: {response_time:.2f}s[/dim]"
+            f"\n[dim]Response Time: "
+            f"{response_time:.2f}s[/dim]"
         )
+
 
         break
-
-
-    # -----------------------------------------------------
-    # Save Memory
-    # -----------------------------------------------------
-
-    with open(MEMORY_FILE, "w") as f:
-
-        json.dump(
-            messages,
-            f,
-            indent=4
-        )
